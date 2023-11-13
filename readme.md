@@ -98,3 +98,118 @@ app.delete('/listado/:index', (req,res)=>{              ---> app.delete para pet
 })                                                           se eliminarán
 
 Para probar si se eliminó se realiza peticion delete pasando el index en el link y luego realizando solicitud post para ver que el elemento que se encontraba en el indice del array ya no se encuentra (puede haber otro en su lugar porque se desliza)
+
+# UTILIZAR NODE JS EN CONJUNTO CON MARIA DB
+
+Para poder realizar peticiones y que los cambios queden guardados hay que utilizar Maria DB en nuestro proyecto, para eso debemos instalar el paquete MariaDB con npm.
+
+npm install mariadb
+
+luego copiamos el codigo que se encuentra en la pagina npmjs:
+
+
+const mariadb = require('mariadb');
+const pool = mariadb.createPool({host: process.env.DB_HOST, user: process.env.DB_USER, connectionLimit: 5});
+
+y modificamos el host, user, password, el nombre de la base de datos que usaremos, en este caso:
+
+const pool = mariadb.createPool({host: "localhost", user: "root", password: "admin", database: "pruebadb", connectionLimit: 5});
+
+Luego copiamos el codigo debajo:
+
+let conn;
+  try {
+
+	conn = await pool.getConnection();
+	const rows = await conn.query("SELECT 1 as val");
+	// rows: [ {val: 1}, meta: ... ]
+
+	const res = await conn.query("INSERT INTO myTable value (?, ?)", [1, "mariadb"]);
+	// res: { affectedRows: 1, insertId: 1, warningStatus: 0 }
+
+  } finally {
+	if (conn) conn.release(); //release to pool
+  }
+y lo pegamos dentro de lo que es nuestra peticion GET, tambien hay que hacer esta funcion asincrona para utilizar los await
+
+En la sección const rows debemos agregar el comando para obtener el listado (comando en lenguaje SQL que usamos en MariaDB), y modificar la respuesta que se le envía al cliente, también se debe agregar el catch al try
+
+
+//CRUD: CREATE, READ, UPDATE, DELETE.
+
+//PETICIÓN GET
+app.get('/listado', async (req, res) => {
+    let conn;
+    try {
+        conn = await pool.getConnection();
+        const rows = await conn.query("SELECT id, name, lastname, email FROM people");
+        res.json(rows); // Corregir aquí
+    } catch (error) {
+        res.status(500).json({ message: "No se pudo realizar la consulta" });
+    }
+    finally {
+        if (conn) conn.release(); // release to pool
+    }
+});
+
+//Parámetro de petición
+app.get('/listado/:id', async (req, res) => {
+    let conn;
+    try {
+        conn = await pool.getConnection();
+        const rows = await conn.query("SELECT id, name, lastname, email FROM people WHERE id = ?", [req.params.id]);
+        res.json(rows[0]);
+    } catch (error) {
+        res.status(500).json({ message: "No se pudo realizar la consulta" });
+    }
+    finally {
+        if (conn) conn.release(); //release to pool
+    }
+})
+
+//PETICIÓN POST
+app.post("/listado", async (req, res) => {
+    let conn;
+    try {
+        conn = await pool.getConnection();
+        const response = await conn.query("INSERT INTO people(name,lastname,email) VALUE(?,?,?)", [req.body.name, req.body.lastname, req.body.email]);
+        res.json({id: parseInt(response.insertId), ...req.body});
+    } catch (error) {
+        res.status(500).json({ message: "No se pudo realizar la consulta" });
+    }
+    finally {
+        if (conn) conn.release(); //release to pool
+    }
+});
+
+
+//PETICIÓN PUT
+app.put('/listado/:id', async (req, res) => {
+    let conn;
+    try {
+        conn = await pool.getConnection();
+        const response = await conn.query("UPDATE people SET name=?, lastname=?, email=? WHERE id=?", [req.body.name, req.body.lastname, req.body.email, req.params.id]);
+        res.json({id: req.params.id, ...req.body});
+    } catch (error) {
+        res.status(500).json({ message: "No se pudo realizar la consulta" });
+    }
+    finally {
+        if (conn) conn.release(); //release to pool
+    }
+});
+
+
+//PETICION DELETE
+app.delete('/listado/:id', async (req, res) => {
+    let conn;
+    try {
+        conn = await pool.getConnection();
+        await conn.query("DELETE FROM people WHERE id = ?", [req.params.id]); 
+        res.json({message: "Elemento borrado correctamente"});
+    } catch (error) {
+        res.status(500).json({ message: "No se pudo realizar la consulta" });
+    }
+    finally {
+        if (conn) conn.release(); // release to pool
+    }
+});
